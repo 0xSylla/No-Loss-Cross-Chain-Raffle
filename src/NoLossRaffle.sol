@@ -1,16 +1,15 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@chainlink/contracts/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@chainlink/contracts/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/utils/SafeERC20.sol"; 
+import {SafeERC20} from "@chainlink/contracts/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/utils/SafeERC20.sol";
 import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
-import {ConfirmedOwnerWithProposal} from "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwnerWithProposal.sol";
 import {IReceiverCCIP} from "./interfaces/IReceiverCCIP.sol";
+import {IPool} from "./interfaces/IPool.sol";
 
-/*@author:Djomoro
+/*@author:0xSylla
 *Host Create a raffle. Raffle has a duration for players to enter, an entry price a max number of rounds.
 *Player enter the raffle by buying tickets(minimum 1). Ticket are bought with STABLE
 *After the duration, Deposits are sent to Aave to genreate yield for a certain period. Then the accured yield
@@ -18,7 +17,7 @@ import {IReceiverCCIP} from "./interfaces/IReceiverCCIP.sol";
 *Each ticket bought is an entry and stored is an array. Winner is selected randomly
 *
 */
-contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
+contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
     using SafeERC20 for IERC20;
 
     error Raffle__InsufficientAmountOfTicket(uint256 nbTickets,string reason);
@@ -36,6 +35,8 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
     error Raffle__NoUpKeepNeeded();
     error WinnerPayoutFailed();
     error FallBack();
+    error Raffle__AaveDepositFailed();
+    error Raffle__NoYieldGenerated();
     
 
     enum RaffleStatut{
@@ -80,6 +81,11 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
     bool private s_transfered;
     bool private s_withdrawn;
     uint256 private s_interval_accrual;
+    //Aave
+    IPool private immutable i_aavePool;
+    IERC20 private s_aToken;
+    uint256 private s_depositedAmount;
+    uint256 private s_roundYield;
 
     mapping(address sender => bool allowed) private s_allowedSender;
     address[] private s_allowedSenderList;
@@ -91,11 +97,9 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
     event RafflePaymentTokenUpdated(IERC20 oldToken, IERC20 newToken);
     event RaffleIntervalUpdated(uint256 oldInterval, uint256 newInterval);
     event RaffleWinnerPicked(address winner, uint256 winnerShare);
+    event FundsDepositedToAave(uint256 amount);
+    event FundsWithdrawnFromAave(uint256 totalWithdrawn, uint256 yield);
     
-    modifier onlyOwner() override(Ownable, ConfirmedOwnerWithProposal) {
-        _checkOwner();
-        _;
-    }
     modifier onlyAllowListed(){
         if(!s_allowedSender[msg.sender]){
             revert Raffle__NotAllowedToCall();
@@ -108,11 +112,12 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
             uint256 _subscriptionID,
             bytes32 gaslane,
             uint32 _callbackGasLimit,
-            address _vrfCoordinator
+            address _vrfCoordinator,
+            address _aavePool,
+            address _aToken
         )
-        Ownable(_owner == address(0) ? msg.sender : _owner)
         VRFConsumerBaseV2Plus(_vrfCoordinator){
-        s_interval = 600; 
+        s_interval = 600;
         s_lastTimeStamp = block.timestamp;
         s_ticketPrice = 0.01 ether;
         s_maxRounds = 3;
@@ -121,10 +126,13 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
         s_playerID = 0;
         s_raffleStatut = RaffleStatut.OPEN;
         s_transfered = false;
+
         s_withdrawn = false;
         i_keyhash = gaslane;
         i_subscriptionID = _subscriptionID;
         i_callbackGasLimit = _callbackGasLimit;
+        i_aavePool = IPool(_aavePool);
+        s_aToken = IERC20(_aToken);
     }
 
     function enterRaffle(uint256 _nbTickets)public{
@@ -164,6 +172,7 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
             emit RaffleEntriesUpdated(msg.sender, _nbTickets);
         }
     }
+
     function enterRaffleCrossChain(address _player,  uint256 _nbTickets, uint256 _totalCost) external onlyAllowListed{
         if(s_raffleStatut != RaffleStatut.OPEN){
             revert Raffle__IsNotOpen(s_raffleStatut);
@@ -221,24 +230,36 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
             withdrawFunds();
         }
     }
-    function nextRound() internal{ 
+    function nextRound() internal{
         if(s_currentRound > s_maxRounds){
             revert Raffle__MaxRoundsReached();
         }
         s_raffleEntries = new uint256[](0);
         s_PlayersInTheRound = new address[](0);
         s_transfered = false;
-        s_withdrawn= false;
+        s_withdrawn = false;
+        s_depositedAmount = 0;
+        s_roundYield = 0;
         s_lastTimeStamp = block.timestamp;
         s_currentRound++;
         s_raffleStatut = RaffleStatut.OPEN;
     }
     function transferFunds() internal{
+        uint256 balance = s_paymentToken.balanceOf(address(this));
+        s_depositedAmount = balance;
+        s_paymentToken.safeIncreaseAllowance(address(i_aavePool), balance);
+        i_aavePool.supply(address(s_paymentToken), balance, address(this), 0);
         s_transfered = true;
         s_lastTimeStamp = block.timestamp;
+        emit FundsDepositedToAave(balance);
     }
     function withdrawFunds() internal{
-        s_withdrawn =true;
+        uint256 aTokenBalance = s_aToken.balanceOf(address(this));
+        uint256 withdrawn = i_aavePool.withdraw(address(s_paymentToken), aTokenBalance, address(this));
+        uint256 yield = withdrawn > s_depositedAmount ? withdrawn - s_depositedAmount : 0;
+        s_roundYield = yield;
+        s_withdrawn = true;
+        emit FundsWithdrawnFromAave(withdrawn, yield);
         pickWinner();
     }
     function pickWinner() internal{
@@ -260,16 +281,20 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
         uint256 winnerID = s_raffleEntries[indexOfWinner];
         address winner = s_IDtoPlayer[winnerID];
 
-        uint256 winnerShare = (address(this).balance * 95) / 100;
+        uint256 yield = s_roundYield;
+        uint256 winnerShare = (yield * 95) / 100;
+        uint256 hostShare = (yield * 5) / 100;
         s_roundWinner[s_currentRound] = Winner(winner, s_playerToTicket[winner], winnerShare);
-        uint256 hostShare = (address(this).balance * 5) / 100;
-        (bool winnerPayoutSuccess,) = payable(winner).call{value: winnerShare}("");
-        if(!winnerPayoutSuccess) { revert WinnerPayoutFailed(); }
-        (bool hostPayoutSuccess,) = payable(owner()).call{value: hostShare}("");
-        if(!hostPayoutSuccess) { revert HostPayoutFailed(); }
+
+        if(winnerShare > 0){
+            s_paymentToken.safeTransfer(winner, winnerShare);
+        }
+        if(hostShare > 0){
+            s_paymentToken.safeTransfer(owner(), hostShare);
+        }
+        s_roundYield = 0;
         emit RaffleWinnerPicked(winner, winnerShare);
         nextRound();
-
     }
     function pauseRaffle() public onlyOwner{
         if(s_raffleStatut != RaffleStatut.OPEN){
@@ -318,6 +343,10 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
     function getCurrentPlayerID() public view returns(uint256){return s_playerID;}
     function getInterval() public view returns (uint256)  {return s_interval; }
     function getPaymentTokenBalance() public  view returns(IERC20,uint256){return (s_paymentToken, s_paymentToken.balanceOf(address(this)));}
+    function getAavePool() public view returns (IPool) {return i_aavePool;}
+    function getDepositedAmount() public view returns (uint256) {return s_depositedAmount;}
+    function getATokenBalance() public view returns (uint256) {return s_aToken.balanceOf(address(this));}
+    function getRoundYield() public view returns (uint256) {return s_roundYield;}
     //Setters
     function setAllowedSender(address _sender) public onlyOwner{
         s_allowedSender[_sender] = true;
@@ -377,18 +406,6 @@ contract Raffle is Ownable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface
         uint256 oldValue = s_interval;
         s_interval = _interval; 
         emit RaffleIntervalUpdated(oldValue, s_interval);
-    }
-    // Override conflicting functions from base contracts
-    function owner() public view override(Ownable, ConfirmedOwnerWithProposal) returns (address) {
-        return Ownable.owner();
-    }
-
-    function transferOwnership(address newOwner) public override(Ownable, ConfirmedOwnerWithProposal) onlyOwner {
-        Ownable.transferOwnership(newOwner);
-    }
-
-    function _transferOwnership(address newOwner) internal override(Ownable, ConfirmedOwnerWithProposal) {
-        Ownable._transferOwnership(newOwner);
     }
 
     receive() external payable { revert FallBack(); }
