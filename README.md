@@ -1,6 +1,6 @@
 # No-Loss Cross-Chain Raffle
 
-A decentralized, multi-chain raffle system where **nobody loses their principal**. Player deposits are routed into Aave lending pools to generate yield — the winner takes the interest, not the deposits. Built with Solidity and the Foundry framework, leveraging Chainlink's oracle ecosystem for verifiable randomness, price feeds, automation, and cross-chain interoperability.
+A decentralized, multi-chain raffle system where **nobody loses their principal**. Player deposits are routed into Aave lending pools to generate yield, the winner takes the interest, not the deposits. Built with Solidity and the Foundry framework, leveraging Chainlink's oracle ecosystem for verifiable randomness, price feeds, automation, and cross-chain interoperability.
 
 > **TL;DR** — Users buy tickets with stablecoins, funds earn yield on Aave, a provably fair winner is selected via Chainlink VRF, and players on *any* supported chain can participate through Chainlink CCIP.
 
@@ -11,16 +11,16 @@ A decentralized, multi-chain raffle system where **nobody loses their principal*
 ```
                         Satellite Chain(s)
                        ┌──────────────────┐
-                       │   SenderCCIP.sol  │  ← Users enter raffle here
+                       │   SenderCCIP.sol │  ← Users enter raffle here
                        └────────┬─────────┘
                                 │  Chainlink CCIP
                                 ▼
 Main Chain  ┌───────────────────────────────────────────┐
-            │              ReceiverCCIP.sol              │
+            │              ReceiverCCIP.sol             │
             │   ┌─────────────────────────────────┐     │
-            │   │        NoLossRaffle.sol          │     │
+            │   │        NoLossRaffle.sol         │     │
             │   │  ┌───────────┐  ┌────────────┐  │     │
-            │   │  │ Aave Pool │  │Chainlink VRF│  │     │
+            │   │  │ Aave Pool │  │Chainlink VRF  │     │
             │   │  └───────────┘  └────────────┘  │     │
             │   │        ┌────────────┐           │     │
             │   │        │ Automation │           │     │
