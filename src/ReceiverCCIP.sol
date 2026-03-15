@@ -129,7 +129,7 @@ contract Receiver is CCIPReceiver, Ownable {
             data: abi.encode(message),
             tokenAmounts: new Client.EVMTokenAmount[](0),
             extraArgs: Client._argsToBytes(
-                Client.GenericExtraArgsV2({gasLimit: 200_000, allowOutOfOrderExecution: true})
+                Client.EVMExtraArgsV1({gasLimit: 200_000})
             ),
             feeToken: address(i_LINK_TOKEN)
         });

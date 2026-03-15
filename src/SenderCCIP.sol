@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
 import {IRouterClient} from "@chainlink/contracts/src/v0.8/ccip/interfaces/IRouterClient.sol";
 import {Client} from "@chainlink/contracts/src/v0.8/ccip/libraries/Client.sol";
@@ -33,6 +33,8 @@ contract SenderCCIP is Ownable, CCIPReceiver {
         IERC20 s_paymentToken, uint256 currentBalance, uint256 ticketsCost, string reason
     );
     error Raffle__RaffleNotActive();
+    error Receiver__SenderNotSet();
+    error Receiver__NotAllowedForSourceChainOrSenderAddress(uint64 sourceChainSelector, address sender);
 
     IRouterClient private immutable i_routerClient;
     IERC20 private immutable s_paymentToken;
