@@ -6,12 +6,12 @@ import {Raffle} from "../src/Raffle.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
 import {AddConsumer, CreateSubscription, FundSubscription} from "./Interactions.s.sol";
 
-
-contract DeployRaffleScript is Script{
-    function run() external returns (Raffle, HelperConfig){
+contract DeployRaffleScript is Script {
+    function run() external returns (Raffle, HelperConfig) {
         return deployContract();
     }
-    function deployContract() public returns(Raffle, HelperConfig){
+
+    function deployContract() public returns (Raffle, HelperConfig) {
         HelperConfig helperConfig = new HelperConfig();
         AddConsumer addConsumer = new AddConsumer();
         HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
@@ -30,17 +30,18 @@ contract DeployRaffleScript is Script{
         vm.startBroadcast();
         Raffle raffle = new Raffle(
             config.subscriptionId,
-            config.gasLane, 
+            config.gasLane,
             config.automationUpdateInterval,
             config.raffleEntranceFee,
             config.callbackGasLimit,
             config.vrfCoordinatorV2_5,
             config.priceFeed,
             config.max_Round,
-            config.interval_investment);
+            config.interval_investment
+        );
         vm.stopBroadcast();
         // We already have a broadcast in here
         addConsumer.addConsumer(address(raffle), config.vrfCoordinatorV2_5, config.subscriptionId, config.account);
-        return(raffle,helperConfig);
+        return (raffle, helperConfig);
     }
 }

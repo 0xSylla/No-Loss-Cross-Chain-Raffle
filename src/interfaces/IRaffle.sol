@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 interface IRaffle {
-     /**
+    /**
      * @notice Enter raffle on behalf of another player (cross-chain functionality)
      * @param _player Address of the player entering the raffle
      * @param _nbTickets Number of tickets to purchase for the player

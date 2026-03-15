@@ -4,8 +4,12 @@ pragma solidity ^0.8.26;
 import {IRouterClient} from "@chainlink/contracts/src/v0.8/ccip/interfaces/IRouterClient.sol";
 import {Client} from "@chainlink/contracts/src/v0.8/ccip/libraries/Client.sol";
 import {CCIPReceiver} from "@chainlink/contracts/src/v0.8/ccip/applications/CCIPReceiver.sol";
-import {IERC20} from "@chainlink/contracts/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@chainlink/contracts/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/utils/SafeERC20.sol";
+import {
+    IERC20
+} from "@chainlink/contracts/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/IERC20.sol";
+import {
+    SafeERC20
+} from "@chainlink/contracts/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract Receiver is CCIPReceiver, Ownable {
@@ -21,9 +25,9 @@ contract Receiver is CCIPReceiver, Ownable {
     enum MessageType {
         ENTER_RAFFLE,
         WINNER_NOTIFICATION,
-        RAFFLE_STATUS_UPDATE 
+        RAFFLE_STATUS_UPDATE
     }
-    
+
     struct CrossChainMessage {
         MessageType messageType;
         bytes data;
@@ -44,7 +48,7 @@ contract Receiver is CCIPReceiver, Ownable {
         bytes data,
         address token,
         uint256 tokenAmount
-    ); 
+    );
 
     event MessageSent(
         bytes32 indexed messageId,
@@ -53,12 +57,12 @@ contract Receiver is CCIPReceiver, Ownable {
         bytes data,
         address token,
         uint256 tokenAmount
-    ); 
+    );
 
     constructor(
-        address _satelliteChainRouterClientAddress, 
-        uint64 _satelliteChainSelector, 
-        address _mainRaffleContract, 
+        address _satelliteChainRouterClientAddress,
+        uint64 _satelliteChainSelector,
+        address _mainRaffleContract,
         address _link
     ) CCIPReceiver(_satelliteChainRouterClientAddress) Ownable(msg.sender) {
         i_routerClient = IRouterClient(_satelliteChainRouterClientAddress);
@@ -81,18 +85,13 @@ contract Receiver is CCIPReceiver, Ownable {
         s_sender = _sender;
     }
 
-    function _ccipReceive(
-        Client.Any2EVMMessage memory any2EvmMessage
-    )
+    function _ccipReceive(Client.Any2EVMMessage memory any2EvmMessage)
         internal
         override
-        onlyAllowlisted(
-            any2EvmMessage.sourceChainSelector,
-            abi.decode(any2EvmMessage.sender, (address))
-        )
+        onlyAllowlisted(any2EvmMessage.sourceChainSelector, abi.decode(any2EvmMessage.sender, (address)))
     {
         (address target, bytes memory functionCallData) = abi.decode(any2EvmMessage.data, (address, bytes));
-        (bool success, ) = target.call(functionCallData);
+        (bool success,) = target.call(functionCallData);
 
         if (!success) {
             revert Receiver__FunctionCallFail();
@@ -101,7 +100,7 @@ contract Receiver is CCIPReceiver, Ownable {
         // FIXED: Added bounds checking for token amounts
         address token = address(0);
         uint256 tokenAmount = 0;
-        
+
         if (any2EvmMessage.destTokenAmounts.length > 0) {
             token = any2EvmMessage.destTokenAmounts[0].token;
             tokenAmount = any2EvmMessage.destTokenAmounts[0].amount;
@@ -118,35 +117,28 @@ contract Receiver is CCIPReceiver, Ownable {
     }
 
     function updateSatelliteChainWithRaffleStatus(bool _raffleActive) external {
-        if(msg.sender != s_mainRaffleContract){
+        if (msg.sender != s_mainRaffleContract) {
             revert Receiver__NotAllowedToCall();
         }
-        
-        CrossChainMessage memory message = CrossChainMessage({
-            messageType: MessageType.RAFFLE_STATUS_UPDATE,
-            data: abi.encode(_raffleActive)
-        });
+
+        CrossChainMessage memory message =
+            CrossChainMessage({messageType: MessageType.RAFFLE_STATUS_UPDATE, data: abi.encode(_raffleActive)});
 
         Client.EVM2AnyMessage memory evm2AnyMessage = Client.EVM2AnyMessage({
             receiver: abi.encode(s_sender),
             data: abi.encode(message),
             tokenAmounts: new Client.EVMTokenAmount[](0),
             extraArgs: Client._argsToBytes(
-                Client.GenericExtraArgsV2({
-                    gasLimit: 200_000,
-                    allowOutOfOrderExecution: true
-                })
+                Client.GenericExtraArgsV2({gasLimit: 200_000, allowOutOfOrderExecution: true})
             ),
             feeToken: address(i_LINK_TOKEN)
         });
 
-        uint256 fees = i_routerClient.getFee(
-            s_satelliteChainSelector,
-            evm2AnyMessage
-        );
+        uint256 fees = i_routerClient.getFee(s_satelliteChainSelector, evm2AnyMessage);
 
-        if (fees > i_LINK_TOKEN.balanceOf(address(this)))
+        if (fees > i_LINK_TOKEN.balanceOf(address(this))) {
             revert NotEnoughBalance(i_LINK_TOKEN.balanceOf(address(this)), fees);
+        }
 
         i_LINK_TOKEN.approve(address(i_routerClient), fees);
 
@@ -155,12 +147,7 @@ contract Receiver is CCIPReceiver, Ownable {
 
         // FIXED: Encode message struct to bytes
         emit MessageSent(
-            messageId,
-            s_satelliteChainSelector,
-            s_sender,
-            abi.encode(message),
-            address(i_LINK_TOKEN),
-            fees
+            messageId, s_satelliteChainSelector, s_sender, abi.encode(message), address(i_LINK_TOKEN), fees
         );
     }
 

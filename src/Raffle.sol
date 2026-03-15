@@ -5,7 +5,9 @@ pragma solidity ^0.8.20;
 import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/automation/interfaces/AutomationCompatibleInterface.sol";
+import {
+    AutomationCompatibleInterface
+} from "@chainlink/contracts/src/v0.8/automation/interfaces/AutomationCompatibleInterface.sol";
 
 import {PriceConverter} from "./PriceConverter.sol";
 
@@ -15,7 +17,7 @@ import {PriceConverter} from "./PriceConverter.sol";
  * @notice This contract is for creating a sample raffle
  * @dev Implements Chainlink VRFv2.5
  */
-contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
+contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface {
     using PriceConverter for uint256;
     /*Errors */
     error Raffle__RaffleNotOpen(RaffleStatus status);
@@ -32,7 +34,7 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
     error UpkeepNotNeeded();
     /* Type declarations*/
 
-    enum RaffleStatus{
+    enum RaffleStatus {
         OPEN,
         ACCURING_YIELD,
         CALCULATING_WINNER,
@@ -40,6 +42,7 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         TIME_OVER,
         PAUSED
     }
+
     /*State Variable */
     struct Player {
         address playerAddress;
@@ -98,13 +101,12 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         s_raffleStatuts = RaffleStatus.OPEN;
         TICKET_PRICE_USD = _TICKET_PRICE_USD;
         s_PlayerID = 0;
-        s_timeisup= false;
+        s_timeisup = false;
         s_fundstransfered = false;
         s_fundswithdrawn = false;
         i_interval_investment = _interval_investment;
     }
 
-    
     function enterRaffle() public payable {
         if ((block.timestamp - s_lastTimeStamp) >= i_interval) {
             s_raffleStatuts = RaffleStatus.TIME_OVER;
@@ -116,9 +118,9 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         if (nbTickets < 1) {
             revert Raffle__NotEnoughEthSent();
         }
-        
+
         Player memory newPlayer = Player(msg.sender, nbTickets);
-        
+
         if (!playerExist(newPlayer)) {
             // Add new player
             s_Round_PlayerList.push(newPlayer);
@@ -130,10 +132,10 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         } else {
             // Update existing player
             uint256 existingPlayerID = getExistingPlayerID(msg.sender);
-            
+
             // Update ticket count in mapping
             s_playersToID[existingPlayerID].nbTicketOwned += nbTickets;
-            
+
             // Update ticket count in array
             for (uint256 i = 0; i < s_Round_PlayerList.length; i++) {
                 if (s_Round_PlayerList[i].playerAddress == msg.sender) {
@@ -141,13 +143,13 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
                     break;
                 }
             }
-            
+
             // Add new raffle entries for the additional tickets
             for (uint256 index = 0; index < nbTickets; ++index) {
                 s_raffle_entries.push(existingPlayerID);
             }
         }
-        
+
         // Handle refund for excess payment
         uint256 refundAmount = msg.value % TICKET_PRICE_USD;
         if (refundAmount > 0) {
@@ -157,71 +159,84 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
                 revert Raffle__ReimbursementFailed(refundAmount);
             }
         }
-        
+
         emit RaffleEntered(msg.sender, nbTickets);
     }
 
-    function checkUpkeep(bytes memory /* checkData */ ) public override returns(bool upkeepNeeded, bytes memory /* performData*/){
-        if(!s_fundstransfered){
+    function checkUpkeep(
+        bytes memory /* checkData */
+    )
+        public
+        override
+        returns (
+            bool upkeepNeeded,
+            bytes memory /* performData*/
+        )
+    {
+        if (!s_fundstransfered) {
             bool timeHasPassed = ((block.timestamp - s_lastTimeStamp) >= i_interval);
-            bool isOpen = (s_raffleStatuts ==  RaffleStatus.OPEN);
+            bool isOpen = (s_raffleStatuts == RaffleStatus.OPEN);
             upkeepNeeded = isOpen && timeHasPassed;
-            return(upkeepNeeded,"");
-        }else if(!s_fundswithdrawn){
+            return (upkeepNeeded, "");
+        } else if (!s_fundswithdrawn) {
             bool timeHasPassed = ((block.timestamp - s_lastTimeStamp) >= i_interval_investment);
             upkeepNeeded = timeHasPassed;
-            return(upkeepNeeded,"");
-        }else{
+            return (upkeepNeeded, "");
+        } else {
             upkeepNeeded = false;
-            return(upkeepNeeded,"");
+            return (upkeepNeeded, "");
         }
     }
 
-
-    function performUpkeep(bytes calldata /* performData */ ) external override {
-
+    function performUpkeep(
+        bytes calldata /* performData */
+    )
+        external
+        override
+    {
         (bool upkeepNeeded,) = checkUpkeep("");
-        if(!upkeepNeeded){ revert UpkeepNotNeeded();}
+        if (!upkeepNeeded) revert UpkeepNotNeeded();
 
         bool hasBalance = address(this).balance > 0;
-        if(!hasBalance && !s_fundstransfered){
+        if (!hasBalance && !s_fundstransfered) {
             //Move on to the next round
             nextRound();
-        }else if(hasBalance && !s_fundstransfered){
+        } else if (hasBalance && !s_fundstransfered) {
             //Transfer funds to generate yield
             transferfunds();
-        }else if(s_fundstransfered && !s_fundswithdrawn){
+        } else if (s_fundstransfered && !s_fundswithdrawn) {
             //Withdraw funds and distribute
             withdrawfunds();
         }
-
     }
 
     function nextRound() internal {
-            currentRound++;
-            if(currentRound < i_maxRound){ 
-                s_raffleStatuts = RaffleStatus.OPEN;
-                s_lastTimeStamp = block.timestamp;
-                s_fundstransfered = false;
-                s_fundswithdrawn = false;
-                emit RaffleNewRoundStarted(currentRound);
-            }else{
-                s_raffleStatuts = RaffleStatus.MAX_ROUNDS_REACHED;
-                emit RaffleMaxRoundReached();
-            }
+        currentRound++;
+        if (currentRound < i_maxRound) {
+            s_raffleStatuts = RaffleStatus.OPEN;
+            s_lastTimeStamp = block.timestamp;
+            s_fundstransfered = false;
+            s_fundswithdrawn = false;
+            emit RaffleNewRoundStarted(currentRound);
+        } else {
+            s_raffleStatuts = RaffleStatus.MAX_ROUNDS_REACHED;
+            emit RaffleMaxRoundReached();
+        }
     }
-    function transferfunds() internal{
+
+    function transferfunds() internal {
         s_fundstransfered = true;
-        s_raffleStatuts =  RaffleStatus.ACCURING_YIELD;
+        s_raffleStatuts = RaffleStatus.ACCURING_YIELD;
         s_lastTimeStamp = block.timestamp;
     }
-    function withdrawfunds() internal{
+
+    function withdrawfunds() internal {
         s_fundswithdrawn = true;
         pickwinner();
     }
 
-    function pickwinner() internal{
-        s_raffleStatuts =  RaffleStatus.CALCULATING_WINNER;
+    function pickwinner() internal {
+        s_raffleStatuts = RaffleStatus.CALCULATING_WINNER;
         VRFV2PlusClient.RandomWordsRequest memory request = VRFV2PlusClient.RandomWordsRequest({
             keyHash: i_keyhash,
             subId: i_subscriptionID,
@@ -233,31 +248,35 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         uint256 requestId = s_vrfCoordinator.requestRandomWords(request);
     }
 
-    function fulfillRandomWords(uint256 requestId, /*requestId*/ uint256[] calldata randomWords) internal override {
+    function fulfillRandomWords(
+        uint256 requestId,
+        /*requestId*/
+        uint256[] calldata randomWords
+    )
+        internal
+        override
+    {
         uint256 indexOfWinner = randomWords[0] % s_raffle_entries.length;
         uint256 winnerID = s_raffle_entries[indexOfWinner];
         Player memory winner = s_playersToID[winnerID];
         s_Round_Winners_List[currentRound] = winner;
-        s_Player_List_By_Round[currentRound]= s_Round_PlayerList;
+        s_Player_List_By_Round[currentRound] = s_Round_PlayerList;
         address payable winnerAddress = payable(winner.playerAddress);
-        
+
         delete s_raffle_entries;
         delete s_Round_PlayerList;
 
-        
         uint256 winnerShare = (address(this).balance * 95) / 100;
         uint256 hostShare = (address(this).balance * 5) / 100;
         (bool winnerPayoutSuccess,) = winnerAddress.call{value: winnerShare}("");
-        if(!winnerPayoutSuccess) { revert WinnerPayoutFailed(); }
+        if (!winnerPayoutSuccess) revert WinnerPayoutFailed();
         (bool hostPayoutSuccess,) = payable(i_owner).call{value: hostShare}("");
-        if(!hostPayoutSuccess) { revert HostPayoutFailed(); }
+        if (!hostPayoutSuccess) revert HostPayoutFailed();
         emit RaffleWinnerPicked(winnerAddress, winnerShare);
         nextRound();
-        
     }
 
-
-    function playerExist(Player memory _player) internal view returns(bool playerExists) {
+    function playerExist(Player memory _player) internal view returns (bool playerExists) {
         playerExists = false;
         for (uint256 i = 0; i < s_Round_PlayerList.length; i++) {
             if (s_Round_PlayerList[i].playerAddress == _player.playerAddress) {
@@ -267,7 +286,7 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         }
     }
 
-    function getExistingPlayerID(address _playerAddress) internal view returns(uint256 playerID) {
+    function getExistingPlayerID(address _playerAddress) internal view returns (uint256 playerID) {
         for (uint256 i = 0; i < s_Round_PlayerList.length; i++) {
             if (s_Round_PlayerList[i].playerAddress == _playerAddress) {
                 // Find the corresponding ID in the mapping
@@ -280,38 +299,36 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         }
         revert("Player not found"); // This should never happen if playerExist returned true
     }
-    function pauseRaffle() public OnlyOWner{
-        s_raffleStatuts =  RaffleStatus.PAUSED;
+
+    function pauseRaffle() public OnlyOWner {
+        s_raffleStatuts = RaffleStatus.PAUSED;
     }
 
-    function resumeRaffle() public OnlyOWner{
-        s_raffleStatuts =  RaffleStatus.OPEN;
+    function resumeRaffle() public OnlyOWner {
+        s_raffleStatuts = RaffleStatus.OPEN;
     }
-    
-    function refundPaticipants() public OnlyOWner{
+
+    function refundPaticipants() public OnlyOWner {
         Player[] memory PlayerList = s_Round_PlayerList;
-        for(uint256 i=0; i < PlayerList.length; i++){
+        for (uint256 i = 0; i < PlayerList.length; i++) {
             uint256 amountToRefund = PlayerList[i].nbTicketOwned * TICKET_PRICE_USD;
-            (bool success,) = payable(PlayerList[i].playerAddress).call{value:amountToRefund}("");
-            if(!success){
+            (bool success,) = payable(PlayerList[i].playerAddress).call{value: amountToRefund}("");
+            if (!success) {
                 revert Raffle__RefundFailed();
             }
         }
     }
 
-    modifier OnlyOWner(){
+    modifier OnlyOWner() {
         if (msg.sender != i_owner) {
             revert NotOwner();
         }
         _;
     }
 
-    
-    
     /**
      * Getters Functions
      */
-
 
     function getInterval() public view returns (uint256) {
         return i_interval;
@@ -328,19 +345,24 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
     function getPlayer(uint256 _playerIndex) public view returns (Player memory) {
         return s_playersToID[_playerIndex];
     }
+
     function getPlayerNBTickets(uint256 _playerIndex) public view returns (uint256) {
         return s_playersToID[_playerIndex].nbTicketOwned;
     }
-    function getHostAddress() public view returns(address){
+
+    function getHostAddress() public view returns (address) {
         return i_owner;
     }
-    function getRaffleInterval() public view returns(uint256){
+
+    function getRaffleInterval() public view returns (uint256) {
         return i_interval;
     }
-    function getRaffleStatus() public view returns(RaffleStatus) {
+
+    function getRaffleStatus() public view returns (RaffleStatus) {
         return s_raffleStatuts;
     }
-    function getWinner(uint256 roundNumber) public view returns(Player memory) {
+
+    function getWinner(uint256 roundNumber) public view returns (Player memory) {
         return s_Round_Winners_List[roundNumber];
     }
 }

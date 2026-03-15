@@ -8,9 +8,9 @@ interface IReceiverCCIP {
     enum MessageType {
         ENTER_RAFFLE,
         WINNER_NOTIFICATION,
-        RAFFLE_STATUS_UPDATE 
+        RAFFLE_STATUS_UPDATE
     }
-    
+
     // Structs
     struct CrossChainMessage {
         MessageType messageType;
@@ -48,7 +48,7 @@ interface IReceiverCCIP {
     function setSender(address _sender) external;
     function withdrawToken(address _token) external;
     function updateSatelliteChainWithRaffleStatus(bool _raffleActive) external;
-    
+
     // View functions (if any public state variables)
     function owner() external view returns (address);
-} 
+}

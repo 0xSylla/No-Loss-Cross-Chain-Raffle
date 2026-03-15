@@ -1,8 +1,12 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {IERC20} from "@chainlink/contracts/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@chainlink/contracts/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/utils/SafeERC20.sol";
+import {
+    IERC20
+} from "@chainlink/contracts/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/IERC20.sol";
+import {
+    SafeERC20
+} from "@chainlink/contracts/src/v0.8/vendor/openzeppelin-solidity/v4.8.3/contracts/token/ERC20/utils/SafeERC20.sol";
 import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
@@ -13,14 +17,14 @@ import {IPool} from "./interfaces/IPool.sol";
 *Host Create a raffle. Raffle has a duration for players to enter, an entry price a max number of rounds.
 *Player enter the raffle by buying tickets(minimum 1). Ticket are bought with STABLE
 *After the duration, Deposits are sent to Aave to genreate yield for a certain period. Then the accured yield
-*is shared between player and host address 
+*is shared between player and host address
 *Each ticket bought is an entry and stored is an array. Winner is selected randomly
 *
 */
-contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
+contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface {
     using SafeERC20 for IERC20;
 
-    error Raffle__InsufficientAmountOfTicket(uint256 nbTickets,string reason);
+    error Raffle__InsufficientAmountOfTicket(uint256 nbTickets, string reason);
     error Raffle__InsufficientBalance(IERC20 token, uint256 currentBalance, uint256 totalTicketsCost, string reason);
     // Additional error declarations needed at the top of the contract
     error Raffle__StillOpen(RaffleStatut raffleStatut);
@@ -37,14 +41,14 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
     error FallBack();
     error Raffle__AaveDepositFailed();
     error Raffle__NoYieldGenerated();
-    
 
-    enum RaffleStatut{
+    enum RaffleStatut {
         OPEN,
         PAUSE,
         CALCULATING_WINNER
     }
-    struct Winner{
+
+    struct Winner {
         address winnerAddress;
         uint256 nbTicketOwned;
         uint256 payout;
@@ -77,7 +81,6 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
     uint32 private constant NUM_WORDS = 1;
     uint32 private immutable i_callbackGasLimit;
 
-
     bool private s_transfered;
     bool private s_withdrawn;
     uint256 private s_interval_accrual;
@@ -99,24 +102,24 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
     event RaffleWinnerPicked(address winner, uint256 winnerShare);
     event FundsDepositedToAave(uint256 amount);
     event FundsWithdrawnFromAave(uint256 totalWithdrawn, uint256 yield);
-    
-    modifier onlyAllowListed(){
-        if(!s_allowedSender[msg.sender]){
+
+    modifier onlyAllowListed() {
+        if (!s_allowedSender[msg.sender]) {
             revert Raffle__NotAllowedToCall();
         }
         _;
     }
 
     constructor(
-            address _owner/*, uint256 _interval, uint256 _ticketPrice, uint256 _maxRounds, address _paymentToken, uint256 _interval_accrual*/,
-            uint256 _subscriptionID,
-            bytes32 gaslane,
-            uint32 _callbackGasLimit,
-            address _vrfCoordinator,
-            address _aavePool,
-            address _aToken
-        )
-        VRFConsumerBaseV2Plus(_vrfCoordinator){
+        address _owner,
+        /*, uint256 _interval, uint256 _ticketPrice, uint256 _maxRounds, address _paymentToken, uint256 _interval_accrual*/
+        uint256 _subscriptionID,
+        bytes32 gaslane,
+        uint32 _callbackGasLimit,
+        address _vrfCoordinator,
+        address _aavePool,
+        address _aToken
+    ) VRFConsumerBaseV2Plus(_vrfCoordinator) {
         s_interval = 600;
         s_lastTimeStamp = block.timestamp;
         s_ticketPrice = 0.01 ether;
@@ -135,15 +138,15 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         s_aToken = IERC20(_aToken);
     }
 
-    function enterRaffle(uint256 _nbTickets)public{
-        if(s_raffleStatut != RaffleStatut.OPEN){
+    function enterRaffle(uint256 _nbTickets) public {
+        if (s_raffleStatut != RaffleStatut.OPEN) {
             revert Raffle__IsNotOpen(s_raffleStatut);
         }
-        if(_nbTickets<1){
-            revert Raffle__InsufficientAmountOfTicket(_nbTickets,"Minimum 1 ticket");
+        if (_nbTickets < 1) {
+            revert Raffle__InsufficientAmountOfTicket(_nbTickets, "Minimum 1 ticket");
         }
         uint256 ticketsCost = _nbTickets * s_ticketPrice;
-        if(s_paymentToken.balanceOf(msg.sender)<ticketsCost){
+        if (s_paymentToken.balanceOf(msg.sender) < ticketsCost) {
             revert Raffle__InsufficientBalance(
                 s_paymentToken,
                 s_paymentToken.balanceOf(msg.sender),
@@ -151,53 +154,58 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
                 "Insufficient balance for the amount of ticket bought"
             );
         }
-        s_paymentToken.safeTransferFrom(msg.sender,address(this),ticketsCost);
+        s_paymentToken.safeTransferFrom(msg.sender, address(this), ticketsCost);
 
-        if(s_playerToID[msg.sender] == 0) { /*New Player*/
-            s_playerID ++;
+        if (s_playerToID[msg.sender] == 0) {
+            /*New Player*/
+            s_playerID++;
             s_IDtoPlayer[s_playerID] = msg.sender;
             s_playerToID[msg.sender] = s_playerID;
             s_playerToTicket[msg.sender] = _nbTickets;
             s_PlayersInTheRound.push(msg.sender);
 
-            for(uint256 i = 0 ; i<_nbTickets ; i++){
+            for (uint256 i = 0; i < _nbTickets; i++) {
                 s_raffleEntries.push(s_playerID);
             }
             emit RaffleNewPlayerEntered(msg.sender, _nbTickets);
-        }else{/*Existing Player*/
+        } else {
+            /*Existing Player*/
             s_playerToTicket[msg.sender] += _nbTickets;
-             for(uint256 i = 0 ; i<_nbTickets ; i++){
+            for (uint256 i = 0; i < _nbTickets; i++) {
                 s_raffleEntries.push(s_playerToID[msg.sender]);
             }
             emit RaffleEntriesUpdated(msg.sender, _nbTickets);
         }
     }
 
-    function enterRaffleCrossChain(address _player,  uint256 _nbTickets, uint256 _totalCost) external onlyAllowListed{
-        if(s_raffleStatut != RaffleStatut.OPEN){
+    function enterRaffleCrossChain(address _player, uint256 _nbTickets, uint256 _totalCost) external onlyAllowListed {
+        if (s_raffleStatut != RaffleStatut.OPEN) {
             revert Raffle__IsNotOpen(s_raffleStatut);
         }
-        s_paymentToken.safeTransferFrom(msg.sender,address(this),_totalCost);
+        s_paymentToken.safeTransferFrom(msg.sender, address(this), _totalCost);
 
-        if(s_playerToID[_player] == 0) { /*New Player*/
-            s_playerID ++;
+        if (s_playerToID[_player] == 0) {
+            /*New Player*/
+            s_playerID++;
             s_IDtoPlayer[s_playerID] = _player;
             s_playerToID[_player] = s_playerID;
             s_playerToTicket[_player] = _nbTickets;
             s_PlayersInTheRound.push(_player);
 
-            for(uint256 i = 0 ; i<_nbTickets ; i++){
+            for (uint256 i = 0; i < _nbTickets; i++) {
                 s_raffleEntries.push(s_playerID);
             }
             emit RaffleNewPlayerEntered(_player, _nbTickets);
-        }else{/*Existing Player*/
+        } else {
+            /*Existing Player*/
             s_playerToTicket[_player] += _nbTickets;
-             for(uint256 i = 0 ; i<_nbTickets ; i++){
+            for (uint256 i = 0; i < _nbTickets; i++) {
                 s_raffleEntries.push(s_playerToID[_player]);
             }
             emit RaffleEntriesUpdated(_player, _nbTickets);
         }
     }
+
     //If funds have not still been transfered and raffle duration is over and Raffle is open we need to perform an upkeep
     function checkUpkeep(
         bytes calldata /* checkData */
@@ -205,33 +213,43 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         external
         view
         override
-        returns (bool upkeepNeeded, bytes memory /* performData */)
+        returns (
+            bool upkeepNeeded,
+            bytes memory /* performData */
+        )
     {
-       if(!s_transfered){
-        bool isOpen = s_raffleStatut == RaffleStatut.OPEN;
-        bool isRoundOver =  block.timestamp - s_lastTimeStamp >= s_interval; 
-        upkeepNeeded = isOpen && isRoundOver;
-       }
-       if(!s_withdrawn){
-        bool isTransfered = s_transfered;
-        bool isAccrualOver =  block.timestamp - s_lastTimeStamp >= s_interval_accrual; 
-        upkeepNeeded = isTransfered && isAccrualOver;
-       }
+        if (!s_transfered) {
+            bool isOpen = s_raffleStatut == RaffleStatut.OPEN;
+            bool isRoundOver = block.timestamp - s_lastTimeStamp >= s_interval;
+            upkeepNeeded = isOpen && isRoundOver;
+        }
+        if (!s_withdrawn) {
+            bool isTransfered = s_transfered;
+            bool isAccrualOver = block.timestamp - s_lastTimeStamp >= s_interval_accrual;
+            upkeepNeeded = isTransfered && isAccrualOver;
+        }
     }
+
     //If has Balance so call the function to transfer to aave, else move to next Round
-    function performUpkeep(bytes calldata /* performData */) external override {
+    function performUpkeep(
+        bytes calldata /* performData */
+    )
+        external
+        override
+    {
         bool hasBalance = s_paymentToken.balanceOf(address(this)) > 0;
-        if(!hasBalance && !s_transfered){
+        if (!hasBalance && !s_transfered) {
             s_roundToPlayersList[s_currentRound] = s_PlayersInTheRound;
             nextRound();
-        } else if(hasBalance && !s_transfered){
+        } else if (hasBalance && !s_transfered) {
             transferFunds();
-        }else if(!s_withdrawn && s_transfered){
+        } else if (!s_withdrawn && s_transfered) {
             withdrawFunds();
         }
     }
-    function nextRound() internal{
-        if(s_currentRound > s_maxRounds){
+
+    function nextRound() internal {
+        if (s_currentRound > s_maxRounds) {
             revert Raffle__MaxRoundsReached();
         }
         s_raffleEntries = new uint256[](0);
@@ -244,7 +262,8 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         s_currentRound++;
         s_raffleStatut = RaffleStatut.OPEN;
     }
-    function transferFunds() internal{
+
+    function transferFunds() internal {
         uint256 balance = s_paymentToken.balanceOf(address(this));
         s_depositedAmount = balance;
         s_paymentToken.safeIncreaseAllowance(address(i_aavePool), balance);
@@ -253,7 +272,8 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         s_lastTimeStamp = block.timestamp;
         emit FundsDepositedToAave(balance);
     }
-    function withdrawFunds() internal{
+
+    function withdrawFunds() internal {
         uint256 aTokenBalance = s_aToken.balanceOf(address(this));
         uint256 withdrawn = i_aavePool.withdraw(address(s_paymentToken), aTokenBalance, address(this));
         uint256 yield = withdrawn > s_depositedAmount ? withdrawn - s_depositedAmount : 0;
@@ -262,8 +282,9 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         emit FundsWithdrawnFromAave(withdrawn, yield);
         pickWinner();
     }
-    function pickWinner() internal{
-        s_raffleStatut =  RaffleStatut.CALCULATING_WINNER;
+
+    function pickWinner() internal {
+        s_raffleStatut = RaffleStatut.CALCULATING_WINNER;
         VRFV2PlusClient.RandomWordsRequest memory request = VRFV2PlusClient.RandomWordsRequest({
             keyHash: i_keyhash,
             subId: i_subscriptionID,
@@ -273,10 +294,16 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
             extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: false}))
         });
         uint256 requestId = s_vrfCoordinator.requestRandomWords(request);
-
     }
 
-    function fulfillRandomWords(uint256 requestId, /*requestId*/ uint256[] calldata randomWords) internal override {
+    function fulfillRandomWords(
+        uint256 requestId,
+        /*requestId*/
+        uint256[] calldata randomWords
+    )
+        internal
+        override
+    {
         uint256 indexOfWinner = randomWords[0] % s_raffleEntries.length;
         uint256 winnerID = s_raffleEntries[indexOfWinner];
         address winner = s_IDtoPlayer[winnerID];
@@ -286,23 +313,24 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
         uint256 hostShare = (yield * 5) / 100;
         s_roundWinner[s_currentRound] = Winner(winner, s_playerToTicket[winner], winnerShare);
 
-        if(winnerShare > 0){
+        if (winnerShare > 0) {
             s_paymentToken.safeTransfer(winner, winnerShare);
         }
-        if(hostShare > 0){
+        if (hostShare > 0) {
             s_paymentToken.safeTransfer(owner(), hostShare);
         }
         s_roundYield = 0;
         emit RaffleWinnerPicked(winner, winnerShare);
         nextRound();
     }
-    function pauseRaffle() public onlyOwner{
-        if(s_raffleStatut != RaffleStatut.OPEN){
+
+    function pauseRaffle() public onlyOwner {
+        if (s_raffleStatut != RaffleStatut.OPEN) {
             revert Raffle__IsNotOpen(s_raffleStatut);
         }
-    
+
         s_raffleStatut = RaffleStatut.PAUSE;
-        
+
         // Calculate remaining time when paused
         uint256 elapsedTime = block.timestamp - s_lastTimeStamp;
         if (elapsedTime < s_interval) {
@@ -311,87 +339,138 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
             s_remainingTimeBeforePause = 0; // Round should have ended
         }
     }
-    function resumeRaffle() public onlyOwner{
-        if(s_raffleStatut != RaffleStatut.PAUSE){
+
+    function resumeRaffle() public onlyOwner {
+        if (s_raffleStatut != RaffleStatut.PAUSE) {
             revert Raffle__StillOpen(s_raffleStatut);
         }
-    
+
         // Reset timestamp so remaining time is preserved
         s_lastTimeStamp = block.timestamp - (s_interval - s_remainingTimeBeforePause);
-        
+
         s_raffleStatut = RaffleStatut.OPEN;
     }
 
-    function updateRaffleStatusToSatelliteChain() public onlyOwner{
+    function updateRaffleStatusToSatelliteChain() public onlyOwner {
         bool s_raffleActive = (s_raffleStatut == RaffleStatut.OPEN);
-    
-        for(uint256 i = 0; i < s_allowedSenderList.length; i++) {
+
+        for (uint256 i = 0; i < s_allowedSenderList.length; i++) {
             // Cast the address to IReceiverCCIP interface and call the function
             IReceiverCCIP(s_allowedSenderList[i]).updateSatelliteChainWithRaffleStatus(s_raffleActive);
         }
     }
+
     //Getters
-    function getCurrentRound() public view returns (uint256){return s_currentRound;}
-    function getMaxRounds() public view returns(uint256)  {return s_maxRounds;}
-    function getPaymentToken() public view returns (IERC20)  {return s_paymentToken;}
-    function getPlayersListInTheRound(uint256 _round) public view returns (address[] memory){return s_roundToPlayersList[_round];}
-    function getRaffleEntries() public view returns (uint256[] memory)  {return s_raffleEntries;}
-    function getPlayerToTicket(address _player) public view returns (uint256){return s_playerToTicket[_player];}
-    function getRaffleStatut() public view returns (RaffleStatut)  {return s_raffleStatut;}
-    function getPlayerIDByAddress(address _player) public view returns (uint256){return s_playerToID[_player];}
-    function getPlayerByID(uint256 _id) public view returns (address){return s_IDtoPlayer[_id];}
-    function getCurrentPlayerID() public view returns(uint256){return s_playerID;}
-    function getInterval() public view returns (uint256)  {return s_interval; }
-    function getPaymentTokenBalance() public  view returns(IERC20,uint256){return (s_paymentToken, s_paymentToken.balanceOf(address(this)));}
-    function getAavePool() public view returns (IPool) {return i_aavePool;}
-    function getDepositedAmount() public view returns (uint256) {return s_depositedAmount;}
-    function getATokenBalance() public view returns (uint256) {return s_aToken.balanceOf(address(this));}
-    function getRoundYield() public view returns (uint256) {return s_roundYield;}
+    function getCurrentRound() public view returns (uint256) {
+        return s_currentRound;
+    }
+
+    function getMaxRounds() public view returns (uint256) {
+        return s_maxRounds;
+    }
+
+    function getPaymentToken() public view returns (IERC20) {
+        return s_paymentToken;
+    }
+
+    function getPlayersListInTheRound(uint256 _round) public view returns (address[] memory) {
+        return s_roundToPlayersList[_round];
+    }
+
+    function getRaffleEntries() public view returns (uint256[] memory) {
+        return s_raffleEntries;
+    }
+
+    function getPlayerToTicket(address _player) public view returns (uint256) {
+        return s_playerToTicket[_player];
+    }
+
+    function getRaffleStatut() public view returns (RaffleStatut) {
+        return s_raffleStatut;
+    }
+
+    function getPlayerIDByAddress(address _player) public view returns (uint256) {
+        return s_playerToID[_player];
+    }
+
+    function getPlayerByID(uint256 _id) public view returns (address) {
+        return s_IDtoPlayer[_id];
+    }
+
+    function getCurrentPlayerID() public view returns (uint256) {
+        return s_playerID;
+    }
+
+    function getInterval() public view returns (uint256) {
+        return s_interval;
+    }
+
+    function getPaymentTokenBalance() public view returns (IERC20, uint256) {
+        return (s_paymentToken, s_paymentToken.balanceOf(address(this)));
+    }
+
+    function getAavePool() public view returns (IPool) {
+        return i_aavePool;
+    }
+
+    function getDepositedAmount() public view returns (uint256) {
+        return s_depositedAmount;
+    }
+
+    function getATokenBalance() public view returns (uint256) {
+        return s_aToken.balanceOf(address(this));
+    }
+
+    function getRoundYield() public view returns (uint256) {
+        return s_roundYield;
+    }
+
     //Setters
-    function setAllowedSender(address _sender) public onlyOwner{
+    function setAllowedSender(address _sender) public onlyOwner {
         s_allowedSender[_sender] = true;
         s_allowedSenderList.push(_sender);
     }
-   function updateTicketPrice(uint256 _ticketPrice) public onlyOwner {
-        if(s_raffleStatut == RaffleStatut.OPEN){
+
+    function updateTicketPrice(uint256 _ticketPrice) public onlyOwner {
+        if (s_raffleStatut == RaffleStatut.OPEN) {
             revert Raffle__StillOpen(s_raffleStatut);
         }
-        
+
         // Input validation
-        if(_ticketPrice == 0){
+        if (_ticketPrice == 0) {
             revert Raffle__InvalidTicketPrice(_ticketPrice, "Ticket price cannot be zero");
         }
-        
+
         uint256 oldValue = s_ticketPrice;
-        s_ticketPrice = _ticketPrice; 
+        s_ticketPrice = _ticketPrice;
         emit RafflePriceUpdated(oldValue, s_ticketPrice);
     }
 
     function updateMaxRounds(uint256 _maxRound) public onlyOwner {
-        if(s_raffleStatut == RaffleStatut.OPEN){
+        if (s_raffleStatut == RaffleStatut.OPEN) {
             revert Raffle__StillOpen(s_raffleStatut);
         }
-        
+
         // Input validation
-        if(_maxRound == 0){
+        if (_maxRound == 0) {
             revert Raffle__InvalidMaxRounds(_maxRound, "Max rounds cannot be zero");
         }
-        
+
         uint256 oldValue = s_maxRounds;
         s_maxRounds = _maxRound;
         emit RaffleMaxRoundUpdated(oldValue, s_maxRounds);
     }
 
     function updatePaymentToken(address _token) public onlyOwner {
-        if(s_raffleStatut == RaffleStatut.OPEN){
+        if (s_raffleStatut == RaffleStatut.OPEN) {
             revert Raffle__StillOpen(s_raffleStatut);
         }
-        
+
         // Input validation
-        if(_token == address(0)){
+        if (_token == address(0)) {
             revert Raffle__InvalidTokenAddress(_token, "Token address cannot be zero");
         }
-        
+
         IERC20 oldToken = s_paymentToken;
         s_paymentToken = IERC20(_token);
         emit RafflePaymentTokenUpdated(oldToken, s_paymentToken);
@@ -399,15 +478,20 @@ contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface{
 
     function updateInterval(uint256 _interval) public onlyOwner {
         // Input validation
-        if(_interval == 0){
+        if (_interval == 0) {
             revert Raffle__InvalidInterval(_interval, "Interval cannot be zero");
         }
-        
+
         uint256 oldValue = s_interval;
-        s_interval = _interval; 
+        s_interval = _interval;
         emit RaffleIntervalUpdated(oldValue, s_interval);
     }
 
-    receive() external payable { revert FallBack(); }
-    fallback() external payable { revert FallBack(); }
+    receive() external payable {
+        revert FallBack();
+    }
+
+    fallback() external payable {
+        revert FallBack();
+    }
 }
